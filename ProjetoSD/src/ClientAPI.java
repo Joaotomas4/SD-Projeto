@@ -1,5 +1,8 @@
 import java.io.*;
 import java.net.Socket;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class ClientAPI implements AutoCloseable {
     private final Demultiplexer demux;
@@ -107,6 +110,55 @@ public class ClientAPI implements AutoCloseable {
 
         byte[] rep = demux.send(OpCode.CONSECUTIVE_SALES, baos.toByteArray());
         return new DataInputStream(new ByteArrayInputStream(rep)).readUTF();
+    }
+
+
+    public String filterEvents(List<String> produtos, int dias) throws Exception {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        DataOutputStream out = new DataOutputStream(baos);
+
+        out.writeInt(dias);
+        out.writeInt(produtos.size());
+        for (String s : produtos) {
+            out.writeUTF(s);
+        }
+
+        byte[] rep = demux.send(OpCode.FILTER_EVENTS, baos.toByteArray());
+
+        DataInputStream in = new DataInputStream(new ByteArrayInputStream(rep));
+        StringBuilder sb = new StringBuilder();
+
+        Map<Integer, String> dicionario = new HashMap<>();
+        int numEntradasDict = in.readInt();
+
+        for (int i = 0; i < numEntradasDict; i++) {
+            int id = in.readInt();
+            String nome = in.readUTF();
+            dicionario.put(id, nome);
+        }
+
+        sb.append("--- Resultados do Filtro ---\n");
+
+        for (int i = 0; i < numEntradasDict; i++) {
+            int id = in.readInt();
+            int numEventos = in.readInt();
+
+            // Traduzir ID para Nome
+            String nomeReal = dicionario.get(id);
+            sb.append("Produto: ").append(nomeReal).append("\n");
+
+            for (int j = 0; j < numEventos; j++) {
+                Evento e = Evento.deserialize(in);
+                sb.append(String.format("   -> Qtd: %d | Preço: %.2f €\n",
+                        e.getQuantidade(), e.getPreco()));
+            }
+        }
+
+        if (numEntradasDict == 0) {
+            sb.append("Nenhum evento encontrado para os critérios selecionados.");
+        }
+
+        return sb.toString();
     }
 
     @Override

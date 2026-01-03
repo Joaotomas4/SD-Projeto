@@ -59,7 +59,7 @@ public class TSDB {
             if (serie == null) return;
 
             // --- DEBUG: VER O ESTADO ANTES ---
-            System.out.println("[DEBUG] Acedendo Dia " + diaID + ". Lista Memória: " + diasEmMemoria);
+            //System.out.println("[DEBUG] Acedendo Dia " + diaID + ". Lista Memória: " + diasEmMemoria);
 
             if (serie.estaEmMemoria()) {
                 diasEmMemoria.remove((Integer) diaID);
@@ -69,14 +69,14 @@ public class TSDB {
 
             if (diasEmMemoria.size() >= S) {
                 int diaParaRemover = diasEmMemoria.remove(0);
-                System.out.println("[SWAP] A remover dia " + diaParaRemover + " para dar lugar ao " + diaID); // DEBUG
+                //System.out.println("[SWAP] A remover dia " + diaParaRemover + " para dar lugar ao " + diaID); // DEBUG
                 SerieDia antiga = historico.get(diaParaRemover);
                 if (antiga != null) antiga.descarregarEventos();
             }
 
             // AGORA: Não passa o diaID, pois a série já o tem internamente
             try {
-                System.out.println("[DISK] A carregar dia " + diaID + " do disco."); // DEBUG
+                //System.out.println("[DISK] A carregar dia " + diaID + " do disco."); // DEBUG
                 serie.carregarDoDisco();
                 diasEmMemoria.add(diaID);
             } catch (IOException e) {
@@ -107,6 +107,9 @@ public class TSDB {
     }
 
     public void registaEvento(String produto, int qtd, double preco) {
+        if (produto == null || produto.trim().isEmpty()) throw new IllegalArgumentException("Nome inválido!");
+        if (qtd <= 0) throw new IllegalArgumentException("Quantidade deve ser positiva!");
+        if (preco < 0) throw new IllegalArgumentException("Preço não pode ser negativo!");
         currentLock.writeLock().lock();
         try {
             // 1. Inserir o evento na lista do dia corrente
@@ -297,5 +300,16 @@ public class TSDB {
             histLock.writeLock().unlock();
             currentLock.writeLock().unlock();
         }
+    }
+
+    public Map<String, List<Evento>> getEventosFiltrados(List<String> produtosInteresse, int diasAtras) throws IOException {
+        // 1. Gestão de Memória
+        garantirSerieNaMemoria(diasAtras);
+
+        SerieDia dia = getSerieDia(diasAtras);
+        if (dia == null) return new HashMap<>();
+
+        // 2. Pedir ao dia para filtrar (para respeitar o Lock do dia)
+        return dia.obterEventosDe(produtosInteresse);
     }
 }

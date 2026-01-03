@@ -1,6 +1,9 @@
 import java.io.*;
 import java.net.Socket;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class ServerWorker implements Runnable {
     private final TSDB tsdb;
@@ -62,6 +65,9 @@ public class ServerWorker implements Runnable {
                     break;
                 case OpCode.CONSECUTIVE_SALES:
                     if (checkAuth(out)) handleConsecutive(in, out, frame.tag);
+                    break;
+                case OpCode.FILTER_EVENTS:
+                    if(checkAuth(out)) handleFilter(in, out);
                     break;
                 default:
                     throw new Exception("Comando não suportado: " + frame.opCode);
@@ -157,5 +163,51 @@ public class ServerWorker implements Runnable {
             throw new IOException("Acesso negado: faça login primeiro.");
         }
         return true;
+    }
+
+    private void handleFilter(DataInputStream in, DataOutputStream out) throws IOException {
+        int diasAtras = in.readInt();
+        int numProdutos = in.readInt();
+        List<String> produtosInteresse = new ArrayList<>();
+        for (int i = 0; i < numProdutos; i++) {
+            produtosInteresse.add(in.readUTF());
+        }
+
+        Map<String, List<Evento>> dados = tsdb.getEventosFiltrados(produtosInteresse, diasAtras);
+
+        // A. Primeiro, enviamos o Dicionário (ID -> Nome)
+        // Atribui um ID numérico temporário a cada produto encontrado
+        Map<String, Integer> dicionario = new HashMap<>();
+        int idCounter = 1;
+
+        out.writeInt(dados.size());
+
+        for (String produto : dados.keySet()) {
+            dicionario.put(produto, idCounter);
+
+            // Protocolo: [ID] [NOME_PRODUTO]
+            out.writeInt(idCounter);
+            out.writeUTF(produto);
+
+            idCounter++;
+        }
+
+        // B. Agora enviamos os eventos usando APENAS os IDs
+        // Protocolo: [ID_PRODUTO] [QTD_EVENTOS] [EV1] [EV2]...
+
+        for (Map.Entry<String, List<Evento>> entry : dados.entrySet()) {
+            String nome = entry.getKey();
+            List<Evento> lista = entry.getValue();
+            int id = dicionario.get(nome);
+
+            out.writeInt(id);            // Identificador curto (4 bytes)
+            out.writeInt(lista.size());  // Quantos eventos
+
+            for (Evento e : lista) {
+                // Serializa apenas (Qtd, Preco, Timestamp)
+                e.serialize(out);
+            }
+        }
+        out.flush();
     }
 }

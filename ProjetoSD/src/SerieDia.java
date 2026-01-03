@@ -129,4 +129,23 @@ public class SerieDia {
             lock.writeLock().unlock();
         }
     }
+
+    public Map<String, List<Evento>> obterEventosDe(List<String> nomes) {
+        lock.readLock().lock();
+        try {
+            Map<String, List<Evento>> resultado = new HashMap<>();
+
+            if (eventosByProduct == null) return resultado; // Segurança
+
+            for (String nome : nomes) {
+                if (eventosByProduct.containsKey(nome)) {
+                    // Cria cópia da lista para não dar erro se o original mudar depois
+                    resultado.put(nome, new ArrayList<>(eventosByProduct.get(nome)));
+                }
+            }
+            return resultado;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
 }
