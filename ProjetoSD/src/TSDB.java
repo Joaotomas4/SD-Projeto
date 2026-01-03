@@ -58,6 +58,9 @@ public class TSDB {
             SerieDia serie = historico.get(diaID);
             if (serie == null) return;
 
+            // --- DEBUG: VER O ESTADO ANTES ---
+            System.out.println("[DEBUG] Acedendo Dia " + diaID + ". Lista Memória: " + diasEmMemoria);
+
             if (serie.estaEmMemoria()) {
                 diasEmMemoria.remove((Integer) diaID);
                 diasEmMemoria.add(diaID);
@@ -66,12 +69,14 @@ public class TSDB {
 
             if (diasEmMemoria.size() >= S) {
                 int diaParaRemover = diasEmMemoria.remove(0);
+                System.out.println("[SWAP] A remover dia " + diaParaRemover + " para dar lugar ao " + diaID); // DEBUG
                 SerieDia antiga = historico.get(diaParaRemover);
                 if (antiga != null) antiga.descarregarEventos();
             }
 
             // AGORA: Não passa o diaID, pois a série já o tem internamente
             try {
+                System.out.println("[DISK] A carregar dia " + diaID + " do disco."); // DEBUG
                 serie.carregarDoDisco();
                 diasEmMemoria.add(diaID);
             } catch (IOException e) {
@@ -226,10 +231,43 @@ public class TSDB {
             // 2. Lógica de Histórico e Retenção D
             SerieDia novoDiaAnterior = new SerieDia(contadorDias, diaCorrente);
 
+
+            // Atualizar a lista de memória
+            List<Integer> novaListaMemoria = new ArrayList<>();
+
+            // O novo dia (que virou histórico 1) entra sempre em memória pois acabou de ser criado
+            novaListaMemoria.add(1);
+
+            // Atualizamos os índices dos dias antigos (quem era 1 vira 2, etc.)
+            for (Integer diaIndex : diasEmMemoria) {
+                int novoIndex = diaIndex + 1;
+                if (novoIndex <= D) {
+                    novaListaMemoria.add(novoIndex);
+                }
+            }
+
+            // Se temos demasiada gente na memória, expulsamos os mais antigos AGORA
+            while (novaListaMemoria.size() > S) {
+                // Removemos o mais antigo da lista (o último elemento neste caso, ou índice 0)
+                // Como estamos a reconstruir, vamos remover do início (FIFO)
+                int diaParaRemover = novaListaMemoria.remove(0);
+
+                // Forçamos a saída da RAM
+                if (historico.containsKey(diaParaRemover)) {
+                    historico.get(diaParaRemover).descarregarEventos();
+                    //System.out.println("[CLEANUP] Dia " + diaParaRemover + " removido da RAM na mudança de dia.");
+                }
+            }
+
+            // Atualizamos a lista oficial
+            this.diasEmMemoria.clear();
+            this.diasEmMemoria.addAll(novaListaMemoria);
+
+            // 3. Rotação do Histórico (Código Original)
             if (historico.containsKey(D)) {
                 SerieDia diaParaEliminar = historico.get(D);
+                diaParaEliminar.descarregarEventos(); // Garante limpeza
                 new File("dia_" + diaParaEliminar.getDiaID() + ".bin").delete();
-                diasEmMemoria.remove((Integer) D);
             }
 
             for (int i = D; i > 1; i--) {
@@ -239,24 +277,21 @@ public class TSDB {
             }
             historico.put(1, novoDiaAnterior);
 
-            // 3. Persistência em disco
+            // 4. Persistência (Código Original)
             try {
                 novoDiaAnterior.persistirParaDisco();
             } catch (IOException e) {
                 System.err.println("Erro ao persistir dia " + contadorDias + ": " + e.getMessage());
             }
 
-            // 4. LIMPEZA PARA O NOVO DIA
+            // Limpeza para o novo dia
             this.diaCorrente = new HashMap<>();
 
-            // 5. RESET DO NOTIFICADOR: Preparar para novas vendas
-            // Só fazemos isto DEPOIS de o mapa estar limpo, para que as novas
-            // esperas não encontrem produtos de "ontem"
             if (this.notificador != null) {
                 this.notificador.prepararNovoDia();
             }
 
-            System.out.println("[TSDB] Dia " + (contadorDias-1) + " fechado. Pronto para o dia seguinte.");
+            //System.out.println("[TSDB] Dia mudado. Memória rastreada: " + diasEmMemoria);
 
         } finally {
             histLock.writeLock().unlock();
