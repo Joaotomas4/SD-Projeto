@@ -62,10 +62,8 @@ public class Notificador {
             while (!diaTerminou && (!dia.containsKey(p1) || !dia.containsKey(p2))) {
                 cond.await();
             }
-
             removerInteresse(p1, cond);
             removerInteresse(p2, cond);
-
             // Se o loop parou mas um dos produtos não existe, o dia acabou antes
             if (!dia.containsKey(p1) || !dia.containsKey(p2)) {
                 throw new Exception("O dia terminou sem que a venda ocorresse.");

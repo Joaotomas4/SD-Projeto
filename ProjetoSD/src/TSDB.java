@@ -57,26 +57,18 @@ public class TSDB {
         try {
             SerieDia serie = historico.get(diaID);
             if (serie == null) return;
-
-            // --- DEBUG: VER O ESTADO ANTES ---
-            //System.out.println("[DEBUG] Acedendo Dia " + diaID + ". Lista Memória: " + diasEmMemoria);
-
             if (serie.estaEmMemoria()) {
                 diasEmMemoria.remove((Integer) diaID);
                 diasEmMemoria.add(diaID);
                 return;
             }
-
             if (diasEmMemoria.size() >= S) {
                 int diaParaRemover = diasEmMemoria.remove(0);
-                //System.out.println("[SWAP] A remover dia " + diaParaRemover + " para dar lugar ao " + diaID); // DEBUG
+
                 SerieDia antiga = historico.get(diaParaRemover);
                 if (antiga != null) antiga.descarregarEventos();
             }
-
-            // AGORA: Não passa o diaID, pois a série já o tem internamente
             try {
-                //System.out.println("[DISK] A carregar dia " + diaID + " do disco."); // DEBUG
                 serie.carregarDoDisco();
                 diasEmMemoria.add(diaID);
             } catch (IOException e) {
@@ -86,6 +78,8 @@ public class TSDB {
             histLock.writeLock().unlock();
         }
     }
+
+
     public boolean registaUtilizador(String user, String pass) {
         authLock.writeLock().lock();
         try {
