@@ -65,25 +65,31 @@ public class Demultiplexer implements AutoCloseable {
     public byte[] send(int opCode, byte[] data) throws IOException, InterruptedException {
         int tag;
         Entry e;
+
         lock.lock();
         try {
             // 1. Gerar Tag única (pode ser um contador global)
             tag = getNextTag();
+
             // 2. Criar entrada no mapa
             e = new Entry(lock.newCondition());
             waiters.put(tag, e);
         } finally {
             lock.unlock();
         }
+
         // 3. Enviar o frame (usando o lock de escrita da TaggedConnection)
         conn.send(tag, opCode, data);
+
         lock.lock();
         try {
             // 4. Esperar pela resposta (Ciclo contra Spurious Wakeups)
             while (e.frame == null && exception == null) {
                 e.cond.await();
             }
+
             if (exception != null) throw exception;
+
             // 5. Limpar e retornar
             waiters.remove(tag);
             return e.frame.payload;

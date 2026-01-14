@@ -145,16 +145,22 @@ public class ServerWorker implements Runnable {
     private void handleSimultaneous(DataInputStream in, DataOutputStream out, int tag) throws Exception {
         String p1 = in.readUTF();
         String p2 = in.readUTF();
-        // Bloqueia a thread até à condição
-        tsdb.getNotificador().esperarSimultaneo(p1, p2, tsdb.getDiaCorrente());
+
+        int diaAtual = tsdb.getDiaCorrenteID();
+
+        tsdb.getNotificador().esperarSimultaneo(p1, p2, diaAtual, tsdb.getDiaCorrente());
+
         out.writeUTF("Venda simultânea detetada!");
     }
 
     private void handleConsecutive(DataInputStream in, DataOutputStream out, int tag) throws Exception {
         String p = in.readUTF();
         int n = in.readInt();
-        // Bloqueia a thread até à condição
-        tsdb.getNotificador().esperarConsecutivo(p, n, tsdb.getDiaCorrente());
+
+        int diaDoPedido = tsdb.getDiaID();
+
+        tsdb.getNotificador().esperarConsecutivo(p, n, diaDoPedido, tsdb.getDiaCorrente());
+
         out.writeUTF("Vendas consecutivas detetadas!");
     }
 

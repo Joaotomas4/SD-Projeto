@@ -4,9 +4,9 @@ import java.util.concurrent.locks.Lock;
 
 public class Notificador {
     private final Lock lock;
-    // Mapa para minimizar threads acordadas: Produto -> Lista de Conditions de quem espera por ele
     private final Map<String, List<Condition>> interessados = new HashMap<>();
-    private boolean diaTerminou = false;
+
+    private int diaCorrente = 0;
 
     public Notificador(Lock lock) {
         this.lock = lock;
@@ -27,22 +27,14 @@ public class Notificador {
         }
     }
 
-    public void prepararNovoDia() {
-        lock.lock();
-        try {
-            this.diaTerminou = false;
-        } finally {
-            lock.unlock();
-        }
-    }
 
-    /**
-     * Chamado pela TSDB quando o dia muda. Acorda todas as threads pendentes.
-     */
-    public void diaTerminou() {
+
+    // MUDANÇA 2: Método para avançar o dia
+    public void avancarDia() {
         lock.lock();
         try {
-            this.diaTerminou = true;
+            this.diaCorrente++; // Incrementamos o dia
+            // Acordamos toda a gente. Eles vão verificar o ID e perceber que já passou.
             for (List<Condition> lista : interessados.values()) {
                 for (Condition c : lista) c.signalAll();
             }
@@ -51,20 +43,25 @@ public class Notificador {
         }
     }
 
-    // --- REQUISITO 5.1: VENDAS SIMULTÂNEAS ---
-    public void esperarSimultaneo(String p1, String p2, Map<String, List<Evento>> dia) throws Exception {
+    // (Remove o método prepararNovoDia, já não é preciso)
+
+    // MUDANÇA 3: O wait verifica se o dia ainda é o mesmo
+    public void esperarSimultaneo(String p1, String p2, int diaDoPedido, Map<String, List<Evento>> dia) throws Exception {
         lock.lock();
         try {
             Condition cond = lock.newCondition();
             registarInteresse(p1, cond);
             registarInteresse(p2, cond);
 
-            while (!diaTerminou && (!dia.containsKey(p1) || !dia.containsKey(p2))) {
+            // Enquanto for o dia certo E os produtos não existirem...
+            while (this.diaCorrente == diaDoPedido && (!dia.containsKey(p1) || !dia.containsKey(p2))) {
                 cond.await();
             }
+
             removerInteresse(p1, cond);
             removerInteresse(p2, cond);
-            // Se o loop parou mas um dos produtos não existe, o dia acabou antes
+
+            // Se o loop terminou mas ainda faltam produtos, foi porque o dia mudou!
             if (!dia.containsKey(p1) || !dia.containsKey(p2)) {
                 throw new Exception("O dia terminou sem que a venda ocorresse.");
             }
@@ -74,22 +71,26 @@ public class Notificador {
     }
 
     // --- REQUISITO 5.2: VENDAS CONSECUTIVAS ---
-    public void esperarConsecutivo(String p, int n, Map<String, List<Evento>> dia) throws Exception {
+    public void esperarConsecutivo(String p, int n, int diaDoPedido, Map<String, List<Evento>> dia) throws Exception {
         lock.lock();
         try {
             Condition cond = lock.newCondition();
             registarInteresse(p, cond);
 
-            while (!diaTerminou && (dia.get(p) == null || dia.get(p).size() < n)) {
+            while (this.diaCorrente == diaDoPedido && (dia.get(p) == null || dia.get(p).size() < n)) {
                 cond.await();
             }
 
             removerInteresse(p, cond);
 
-            // Validação: verificamos se o produto atingiu de facto a quantidade N
-            if (dia.get(p) == null || dia.get(p).size() < n) {
+            if (this.diaCorrente != diaDoPedido) {
                 throw new Exception("O dia terminou antes de atingir as " + n + " vendas.");
             }
+
+            if (dia.get(p) == null || dia.get(p).size() < n) {
+                throw new Exception("Erro de sincronização: condição não cumprida.");
+            }
+
         } finally {
             lock.unlock();
         }
